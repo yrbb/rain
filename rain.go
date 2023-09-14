@@ -19,7 +19,6 @@ import (
 
 	"github.com/yrbb/rain/pkg/database"
 	"github.com/yrbb/rain/pkg/logger"
-	"github.com/yrbb/rain/pkg/pprof"
 	"github.com/yrbb/rain/pkg/redis"
 )
 
@@ -43,7 +42,6 @@ type Rain struct {
 	worker   *ants.Pool
 	engine   *gin.Engine
 	server   *http.Server
-	pprof    *pprof.Debug
 	watcher  *fsnotify.Watcher
 
 	beforeStart    []func()
@@ -199,25 +197,17 @@ func (p *Rain) listenSignals() {
 
 		logger.M().Info(fmt.Sprintf("收到信号: %s, Pid: %d", sig.String(), p.pid))
 
-		switch sig {
-		case syscall.SIGUSR1:
-			p.pprof.PProf()
-			goto END
-
-		default:
-			if p.server != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), p.config.Server.StopTimeout)
-				if err := p.server.Shutdown(ctx); err != nil {
-					logger.M().Error("HTTP 服务停止异常", slog.String("error", err.Error()))
-				} else {
-					logger.M().Info("HTTP 服务停止")
-				}
-				cancel()
+		if p.server != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), p.config.Server.StopTimeout)
+			if err := p.server.Shutdown(ctx); err != nil {
+				logger.M().Error("HTTP 服务停止异常", slog.String("error", err.Error()))
+			} else {
+				logger.M().Info("HTTP 服务停止")
 			}
-
-			p.stop()
+			cancel()
 		}
-	END:
+
+		p.stop()
 	}
 }
 
@@ -259,8 +249,6 @@ func (p *Rain) checkIsHelpCommand(cmd *cobra.Command, args []string) {
 }
 
 func (p *Rain) initComponents() error {
-	p.pprof = pprof.New(&p.config.PProf)
-
 	err := p.initWorker()
 	if err != nil {
 		return err

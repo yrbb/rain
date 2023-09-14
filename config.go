@@ -12,7 +12,6 @@ import (
 	"github.com/panjf2000/ants/v2"
 
 	"github.com/yrbb/rain/pkg/database"
-	"github.com/yrbb/rain/pkg/pprof"
 	"github.com/yrbb/rain/pkg/redis"
 	"github.com/yrbb/rain/pkg/utils"
 )
@@ -25,7 +24,6 @@ type Config struct {
 	Logger   logConfig         `toml:"logger"`
 	Server   serverConfig      `toml:"server"`
 	Worker   workerConfig      `toml:"worker"`
-	PProf    pprof.Config      `toml:"pprof"`
 	Database []database.Config `toml:"database"`
 	Redis    []redis.Config    `toml:"redis"`
 	Custom   map[string]any    `toml:"custom"`
