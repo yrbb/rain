@@ -31,6 +31,9 @@ const (
 )
 
 var (
+	// ErrRecordNotFound 错误：记录不存在
+	ErrRecordNotFound = errors.New("record not found")
+
 	// ErrMissingModel 错误：未继承 ORM Model
 	ErrMissingModel = errors.New("missing model")
 
@@ -61,6 +64,9 @@ var (
 	// ErrDuplicateValues 错误：重复赋值
 	ErrDuplicateValues = errors.New("duplicate values")
 
+	// ErrFieldsNotMatch 错误：字段不匹配
+	ErrFieldsNotMatch = errors.New("fields not match")
+
 	// ErrNotSetUpdateField 错误：未设置更新字段
 	ErrNotSetUpdateField = errors.New("not set update field")
 
@@ -69,21 +75,6 @@ var (
 
 	// ErrTransNotExist 错误：事物不存在
 	ErrTransNotExist = errors.New("transaction not exist")
-
-	// ErrNoAvailableConn 错误：没有可用连接
-	ErrNoAvailableConn = errors.New("not available conn")
-
-	// ErrLockKey 错误：锁定失败
-	ErrLockKey = errors.New("try to lock key error")
-
-	// ErrGenerateID 错误：获取 ID 失败
-	ErrGenerateID = errors.New("generate id")
-
-	// ErrRedisNotSet 错误：Redis 未设置
-	ErrRedisNotSet = errors.New("redis not set")
-
-	// ErrRedisNotSet 错误：获取 Redis 连接失败
-	ErrGetRedisConn = errors.New("failed to get redis connection")
 
 	// ErrFromEmpty 错误: 没有 FROM 条件
 	ErrFromEmpty = errors.New("from empty")

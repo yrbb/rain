@@ -21,7 +21,7 @@ func Init(project string, lvl string, path string, splitTime time.Duration) {
 	lWriter = writer.NewFileWriter(project, path, splitTime)
 
 	gLevel = &slog.LevelVar{}
-	WithLevel(lvl)
+	SetLevel(lvl)
 
 	textHandler := handler.TextOptions{
 		Level:  gLevel,
@@ -42,7 +42,7 @@ func Init(project string, lvl string, path string, splitTime time.Duration) {
 	})
 }
 
-func WithDebug(d bool) {
+func SetDebug(d bool) {
 	if !d {
 		slog.SetDefault(dLogger)
 		return
@@ -51,7 +51,7 @@ func WithDebug(d bool) {
 	slog.SetDefault(mLogger)
 }
 
-func WithLevel(lvl string) {
+func SetLevel(lvl string) {
 	switch strings.ToLower(lvl) {
 	case "debug":
 		gLevel.Set(slog.LevelDebug)
@@ -64,7 +64,7 @@ func WithLevel(lvl string) {
 	}
 }
 
-func WithSplitTime(st time.Duration) {
+func SetSplitTime(st time.Duration) {
 	lWriter.(*writer.LevelWriter).WithSplitTime(st)
 }
 

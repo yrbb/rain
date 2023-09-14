@@ -1,11 +1,23 @@
 package orm
 
-func (o *Orm) Get(obj any, to ...map[string]any) (find bool, err error) {
-	return o.NewSession().Get(obj, to...)
+func (o *Orm) Get(obj IModel) (find bool, err error) {
+	return o.NewSession().Get(obj)
 }
 
-func (o *Orm) Find(obj any) (find bool, err error) {
+func (o *Orm) GetMap(obj IModel, m map[string]any) (find bool, err error) {
+	return o.NewSession().GetMap(obj, m)
+}
+
+func (o *Orm) Find(obj []IModel) (find bool, err error) {
 	return o.NewSession().Find(obj)
+}
+
+func (o *Orm) FindMap(obj IModel, m *[]map[string]any) (find bool, err error) {
+	return o.NewSession().FindMap(obj, m)
+}
+
+func (o *Orm) Table(obj IModel) *Session {
+	return o.NewSession().Table(obj)
 }
 
 func (o *Orm) Columns(columns ...string) *Session {
@@ -32,19 +44,19 @@ func (o *Orm) Values(value any) *Session {
 	return o.NewSession().Values(value)
 }
 
-func (o *Orm) Insert(obj ...any) (int64, error) {
+func (o *Orm) Insert(obj ...IModel) (int64, error) {
 	return o.NewSession().Insert(obj...)
 }
 
-func (o *Orm) Update(obj ...any) (int64, error) {
+func (o *Orm) Update(obj ...IModel) (int64, error) {
 	return o.NewSession().Update(obj...)
 }
 
-func (o *Orm) Delete(obj any) (int64, error) {
-	return o.NewSession().Delete(obj)
+func (o *Orm) Delete(obj ...IModel) (int64, error) {
+	return o.NewSession().Delete(obj...)
 }
 
-func (o *Orm) Save(obj any, params map[string]any) (int64, error) {
+func (o *Orm) Save(obj IModel, params map[string]any) (int64, error) {
 	return o.NewSession().Save(obj, params)
 }
 

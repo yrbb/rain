@@ -103,7 +103,7 @@ func (p *Rain) initLogger() {
 		p.config.Logger.Path,
 		p.config.Logger.SplitTime,
 	)
-	logger.WithDebug(p.config.Debug)
+	logger.SetDebug(p.config.Debug)
 }
 
 func (p *Rain) initConfigWatcher(file string, callback func(*Config)) {
@@ -170,15 +170,15 @@ func (p *Rain) Run() {
 }
 
 func (p *Rain) configUpdate(cfg *Config) {
-	logger.WithDebug(cfg.Debug)
+	logger.SetDebug(cfg.Debug)
 
 	if p.redis != nil {
-		p.redis.WithDebug(cfg.Debug)
+		p.redis.SetDebug(cfg.Debug)
 		p.redis.UpdateConfig(cfg.Redis)
 	}
 
 	if p.database != nil {
-		p.database.WithDebug(cfg.Debug)
+		p.database.SetDebug(cfg.Debug)
 		p.database.UpdateConfig(cfg.Database)
 	}
 
@@ -270,13 +270,13 @@ func (p *Rain) initComponents() error {
 	if err != nil {
 		return err
 	}
-	p.redis.WithDebug(p.config.Debug)
+	p.redis.SetDebug(p.config.Debug)
 
 	p.database, err = database.New(p.config.Database)
 	if err != nil {
 		return err
 	}
-	p.database.WithDebug(p.config.Debug)
+	p.database.SetDebug(p.config.Debug)
 
 	return nil
 }

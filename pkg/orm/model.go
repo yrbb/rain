@@ -39,7 +39,7 @@ func (d *Model) Original() *reflect.Value {
 	return d.original
 }
 
-type ModelInfo struct {
+type modelInfo struct {
 	Name          string
 	Fields        []string
 	PrimaryKeys   []*string
@@ -51,7 +51,7 @@ type modelParser struct {
 	models sync.Map
 }
 
-func (o *modelParser) GetModelInfo(table any, isType ...bool) (*ModelInfo, error) {
+func (o *modelParser) getModelInfo(table any, isType ...bool) (*modelInfo, error) {
 	var (
 		v reflect.Value
 		t reflect.Type
@@ -99,7 +99,7 @@ func (o *modelParser) GetModelInfo(table any, isType ...bool) (*ModelInfo, error
 
 	// 是否已经缓存过
 	if s, ok := o.models.Load(tName); ok {
-		return s.(*ModelInfo), nil
+		return s.(*modelInfo), nil
 	}
 
 	// 如果是指针则取得具体元素
@@ -117,12 +117,12 @@ func (o *modelParser) GetModelInfo(table any, isType ...bool) (*ModelInfo, error
 }
 
 // 缓存表信息
-func (o *modelParser) cacheTableInfo(t reflect.Type, tName string) (*ModelInfo, error) {
+func (o *modelParser) cacheTableInfo(t reflect.Type, tName string) (*modelInfo, error) {
 	// 表字段数
 	fNum := t.NumField()
 
 	// 实例化一个 TableInfo
-	newVal := &ModelInfo{
+	newVal := &modelInfo{
 		Name:        tName,
 		Fields:      make([]string, fNum-1),
 		PrimaryKeys: []*string{},
@@ -162,7 +162,7 @@ func (o *modelParser) cacheTableInfo(t reflect.Type, tName string) (*ModelInfo, 
 			}
 
 			// 唯一字段
-			if v[:9] == keywordUniqueKey {
+			if len(v) > 9 && v[:9] == keywordUniqueKey {
 				if u := strings.Replace(v, keywordUniqueKey, "", -1); u == "" {
 					newVal.UniqueKeys[*fPtr] = append(newVal.UniqueKeys[*fPtr], fPtr)
 				} else {

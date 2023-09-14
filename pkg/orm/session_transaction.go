@@ -1,7 +1,7 @@
 package orm
 
 func (s *Session) Begin() error {
-	if s.txID > 0 {
+	if s.txId > 0 {
 		return nil
 	}
 
@@ -32,7 +32,7 @@ func (s *Session) Commit() error {
 }
 
 func (s *Session) transaction(t string) error {
-	if s.txID > 0 {
+	if s.txId > 0 {
 		return nil
 	}
 

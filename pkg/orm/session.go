@@ -2,6 +2,7 @@ package orm
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -9,21 +10,18 @@ import (
 type Session struct {
 	orm *Orm
 
-	tx   *sql.Tx
-	txID int
+	error error
+	table *modelInfo
 
 	queryTimeout time.Duration
+	queryStart   time.Time
+	queryTime    float64
 
-	status bool
-	error  error
+	tx   *sql.Tx
+	txId int
 
-	insertID     int64
+	insertId     int64
 	rowsAffected int64
-
-	queryStart time.Time
-	queryTime  float64
-
-	table *ModelInfo
 
 	sql  string
 	args []any
@@ -39,52 +37,42 @@ type Session struct {
 
 	set    map[string]any // for update
 	fields []string       // for insert
-
+	values int            // for insert
 	colIdx []int          // for select
-	params map[string]any // for insert、update cb
 }
 
-func (s *Session) WithTimeout(t time.Duration) *Session {
+func (s *Session) SetTimeout(t time.Duration) *Session {
 	s.queryTimeout = t
 
 	return s
 }
 
-func (s *Session) after(op string, status bool) {
-	s.queryTime = time.Since(s.queryStart).Seconds()
-	s.status = status
+func (s *Session) after(err error) {
+	s.queryTime = float64(time.Since(s.queryStart).Milliseconds())
 
-	if s.orm.longQueryTime > 0 && s.queryTime >= s.orm.longQueryTime {
-		// s.orm.log().Warnf(
-		// 	"long query [%.6f], sql: %s, args: %v",
-		// 	s.queryTime, s.GetSQL(), s.params,
-		// )
+	if s.orm.config.SlowThreshold > 0 && s.queryTime >= s.orm.config.SlowThreshold {
+		slog.Warn(fmt.Sprintf(
+			"long query [%.6f], sql: %s, args: %v",
+			s.queryTime, s.sql, s.args,
+		))
 	}
 
-	// var table string
-	// if s.table != nil {
-	// 	table = s.table.Name
-	// }
+	var tableName string
+	if s.table != nil {
+		tableName = s.table.Name
+	}
 
-	// fields := []any{
-	// 	slog.Float64("took", float64(elapsed.Nanoseconds())/1e6),
-	// 	slog.Int64("rows", rows),
-	// 	slog.String("sql", sql),
-	// }
+	fields := []any{
+		slog.String("table", tableName),
+		slog.String("sql", s.sql),
+		slog.Any("args", s.args),
+		// slog.Any("params", s.params),
+		slog.Float64("took", s.queryTime),
+		slog.Int64("rowsAffected", s.rowsAffected),
+		slog.Int64("insertId", s.insertId),
+	}
 
-	// FIXME
-	slog.Debug("query")
-	// .Fields(map[string]any{
-	// 	"Table":        table,
-	// 	"SQL":          s.sql,
-	// 	"Args":         s.args,
-	// 	"Params":       s.params,
-	// 	"InsertId":     s.insertID,
-	// 	"RowsAffected": s.rowsAffected,
-	// 	"StartTime":    s.queryStart.Format("2006-01-02 15:04:05.000000"),
-	// 	"QueryTime":    s.queryTime,
-	// 	"Status":       s.status,
-	// }).Debug()
+	slog.Debug("query", fields...)
 }
 
 func (s *Session) reset() {
@@ -92,7 +80,7 @@ func (s *Session) reset() {
 	s.error = nil
 
 	if s.tx == nil {
-		s.insertID = 0
+		s.insertId = 0
 		s.rowsAffected = 0
 	}
 
@@ -108,9 +96,9 @@ func (s *Session) reset() {
 	s.where = nil
 	s.set = nil
 	s.fields = nil
+	s.values = 0
 	s.args = nil
 
 	s.table = nil
 	s.colIdx = nil
-	s.params = nil
 }

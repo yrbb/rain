@@ -58,10 +58,10 @@ func New(configs []Config) (*Database, error) {
 	return m, nil
 }
 
-func (m *Database) WithDebug(d bool) {}
+func (m *Database) SetDebug(d bool) {}
 
 func (m *Database) create(c *Config) error {
-	db, err := orm.Open(&c.Config)
+	db, err := orm.New(&c.Config)
 	if err != nil {
 		return fmt.Errorf("orm open connect (%s) error: %v", c.Name, err)
 	}

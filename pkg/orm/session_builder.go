@@ -7,7 +7,7 @@ import (
 	"github.com/yrbb/rain/pkg/utils"
 )
 
-func (s *Session) BuildSelectSQL() (string, []any, error) {
+func (s *Session) buildSelectSQL() (string, []any, error) {
 	if s.sql == "" {
 		where := s.buildWhereString()
 		if where == "" {
@@ -38,7 +38,7 @@ func (s *Session) BuildSelectSQL() (string, []any, error) {
 	return s.sql, s.args, nil
 }
 
-func (s *Session) BuildUpdateSQL() (string, []any, error) {
+func (s *Session) buildUpdateSQL() (string, []any, error) {
 	if s.sql == "" {
 		where := s.buildWhereString()
 		if where == "" {
@@ -53,7 +53,7 @@ func (s *Session) BuildUpdateSQL() (string, []any, error) {
 		parts := utils.SliceStringFilter([]string{
 			"UPDATE",
 			from,
-			s.buildSetString(),
+			s.buildSetString(false),
 			where,
 			s.buildOrderByString(),
 			s.buildLimitString(),
@@ -67,7 +67,7 @@ func (s *Session) BuildUpdateSQL() (string, []any, error) {
 	return s.sql, s.args, nil
 }
 
-func (s *Session) BuildDeleteSQL() (string, []any, error) {
+func (s *Session) buildDeleteSQL() (string, []any, error) {
 	if s.sql == "" {
 		where := s.buildWhereString()
 		if where == "" {
@@ -96,7 +96,7 @@ func (s *Session) BuildDeleteSQL() (string, []any, error) {
 	return s.sql, s.args, nil
 }
 
-func (s *Session) BuildInsertSQL() (string, []any, error) {
+func (s *Session) buildInsertSQL() (string, []any, error) {
 	if s.sql == "" {
 		from := s.buildFromString(true)
 		if from == "" {
@@ -121,7 +121,7 @@ func (s *Session) BuildInsertSQL() (string, []any, error) {
 	return s.sql, s.args, nil
 }
 
-func (s *Session) buildSetString(insert ...bool) string {
+func (s *Session) buildSetString(isInsert bool) string {
 	if len(s.set) == 0 {
 		return ""
 	}
@@ -142,7 +142,7 @@ func (s *Session) buildSetString(insert ...bool) string {
 		s.args = append(s.args, v)
 	}
 
-	if len(insert) > 0 && insert[0] {
+	if isInsert {
 		return "ON DUPLICATE KEY UPDATE " + strings.Join(arr, ", ")
 	}
 
@@ -150,27 +150,25 @@ func (s *Session) buildSetString(insert ...bool) string {
 }
 
 func (s *Session) buildValuesString() string {
-	if s.fields == nil || len(s.fields) == 0 {
+	if s.error != nil || s.fields == nil || len(s.fields) == 0 {
 		return ""
 	}
-
-	if s.error != nil {
-		return ""
-	}
-
-	str := "(`"
-	str += strings.Join(s.fields, "`,`")
-	str += "`) VALUES ("
 
 	l := len(s.fields)
-
 	val := make([]string, l)
 	for i := 0; i < l; i++ {
 		val[i] = "?"
 	}
 
-	str += strings.Join(val, ",")
-	str += ")"
+	vStr := "(" + strings.Join(val, ",") + ")"
+
+	aStr := make([]string, s.values)
+	for i := 0; i < s.values; i++ {
+		aStr[i] = vStr
+	}
+
+	str := "(`" + strings.Join(s.fields, "`,`") + "`) VALUES "
+	str += strings.Join(aStr, ",")
 
 	return str
 }

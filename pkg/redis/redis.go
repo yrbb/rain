@@ -164,7 +164,7 @@ func (m *Redis) UpdateConfig(c []Config) bool {
 	return true
 }
 
-func (m *Redis) WithDebug(d bool) {
+func (m *Redis) SetDebug(d bool) {
 	m.hooks.Range(func(_, v any) bool {
 		v.(*LogHook).Debug = d
 		return true

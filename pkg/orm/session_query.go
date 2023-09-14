@@ -8,6 +8,10 @@ import (
 )
 
 func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.Rows, err error) {
+	defer func() {
+		s.after(err)
+	}()
+
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
 	}
@@ -23,61 +27,58 @@ func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.R
 
 	s.queryStart = time.Now()
 
-	if s.tx != nil {
-		rows, err = s.tx.Query(sqlStr, values...)
-	} else {
-		if s.queryTimeout == 0 {
-			rows, err = s.orm.db.Query(sqlStr, values...)
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
-			rows, err = s.orm.db.QueryContext(ctx, sqlStr, values...)
-			cancel()
-		}
+	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	if s.queryTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, s.queryTimeout)
 	}
+	defer cancel()
 
-	s.after("query", err == nil)
+	if s.tx != nil {
+		rows, err = s.tx.QueryContext(ctx, sqlStr, values...)
+	} else {
+		rows, err = s.orm.db.QueryContext(ctx, sqlStr, values...)
+	}
 
 	return
 }
 
-func (s *Session) Get(obj any, m ...map[string]any) (bool, error) {
+func (s *Session) Get(obj IModel) (bool, error) {
 	defer s.reset()
 
-	if len(m) > 0 {
-		return s.GetMap(obj, m[0])
+	if s.error != nil {
+		return false, s.error
 	}
 
-	_, find, err := s.getOne(obj)
+	_, find, err := s.getRow(obj)
 
 	return find, err
 }
 
-func (s *Session) GetMap(obj any, m map[string]any, defa ...bool) (bool, error) {
+func (s *Session) GetMap(obj IModel, m map[string]any) (bool, error) {
 	defer s.reset()
 
-	v, find, err := s.getOne(obj)
+	if s.error != nil {
+		return false, s.error
+	}
+
+	v, find, err := s.getRow(obj)
 	if err != nil {
 		return find, err
 	}
 
-	if find || (len(defa) > 0 && defa[0]) {
+	if find {
 		for _, idx := range s.colIdx {
 			m[s.table.Fields[idx-1]] = v.Elem().Field(idx).Interface()
 		}
 	}
 
-	return find, nil
+	return find, err
 }
 
-func (s *Session) getOne(obj any) (v reflect.Value, find bool, err error) {
-	if s.error != nil {
-		err = s.error
-		return
-	}
-
+func (s *Session) getRow(obj IModel) (v reflect.Value, find bool, err error) {
 	s.Limit(1)
 
-	if v, err = s.findCheck(obj); err != nil {
+	if v, err = s.queryCheck(obj); err != nil {
 		return
 	}
 
@@ -87,7 +88,7 @@ func (s *Session) getOne(obj any) (v reflect.Value, find bool, err error) {
 	}
 
 	var rows *sql.Rows
-	rows, err = s.Query(s.BuildSelectSQL())
+	rows, err = s.Query(s.buildSelectSQL())
 	if err != nil {
 		return
 	}
@@ -149,18 +150,18 @@ func (s *Session) Find(obj any) (find bool, err error) {
 	}
 
 	if s.table == nil {
-		if s.table, err = s.orm.GetModelInfo(et, true); err != nil {
-			return find, err
+		if s.table, err = s.orm.getModelInfo(et, true); err != nil {
+			return
 		}
 	}
 
 	if s.colIdx == nil {
-		s.parseSelectFields()
+		s.makeSelectFields()
 	}
 
 	var rows *sql.Rows
 
-	rows, err = s.Query(s.BuildSelectSQL())
+	rows, err = s.Query(s.buildSelectSQL())
 	if err != nil {
 		return
 	}
@@ -202,17 +203,15 @@ func (s *Session) Find(obj any) (find bool, err error) {
 	return
 }
 
-func (s *Session) FindMap(obj any, m *[]map[string]any) (find bool, err error) {
+func (s *Session) FindMap(obj IModel, m *[]map[string]any) (find bool, err error) {
 	defer s.reset()
 
 	if s.error != nil {
-		err = s.error
-		return
+		return find, s.error
 	}
 
 	var v reflect.Value
-
-	if v, err = s.findCheck(obj); err != nil {
+	if v, err = s.queryCheck(obj); err != nil {
 		return
 	}
 
@@ -222,8 +221,7 @@ func (s *Session) FindMap(obj any, m *[]map[string]any) (find bool, err error) {
 	}
 
 	var rows *sql.Rows
-	rows, err = s.Query(s.BuildSelectSQL())
-
+	rows, err = s.Query(s.buildSelectSQL())
 	if err != nil {
 		return
 	}
@@ -252,33 +250,23 @@ func (s *Session) FindMap(obj any, m *[]map[string]any) (find bool, err error) {
 	return
 }
 
-func (s *Session) findCheck(obj any) (v reflect.Value, err error) {
+func (s *Session) queryCheck(obj IModel) (v reflect.Value, err error) {
 	v = reflect.ValueOf(obj)
 
-	if v.Kind() != reflect.Ptr {
-		err = ErrNeedPointer
-		return
-	}
-
-	if k := reflect.Indirect(v).Kind(); k != reflect.Struct {
-		err = ErrElementNeedStruct
-		return
-	}
-
 	if s.table == nil {
-		if s.table, err = s.orm.GetModelInfo(obj); err != nil {
+		if s.table, err = s.orm.getModelInfo(obj); err != nil {
 			return
 		}
 	}
 
 	if s.colIdx == nil {
-		s.parseSelectFields()
+		s.makeSelectFields()
 	}
 
 	return
 }
 
-func (s *Session) parseSelectFields() {
+func (s *Session) makeSelectFields() {
 	s.colIdx = []int{}
 
 	if s.columns != nil && len(s.columns) > 0 {
@@ -302,49 +290,52 @@ func (s *Session) parseSelectFields() {
 	}
 }
 
-func (s *Session) Count(obj any) (i int64, err error) {
+func (s *Session) Count(obj ...IModel) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("count(1) as count")
 
-	err = s.Pluck(obj, &i)
+	err = s.Pluck(&i, obj...)
 
 	return
 }
 
-func (s *Session) Max(obj any, field string) (i int64, err error) {
+func (s *Session) Max(field string, obj ...IModel) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("max(" + field + ") as max")
 
-	err = s.Pluck(obj, &i)
+	err = s.Pluck(&i, obj...)
 
 	return
 }
 
-func (s *Session) Sum(obj any, field string) (i int64, err error) {
+func (s *Session) Sum(field string, obj ...IModel) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("sum(" + field + ") as sum")
 
-	err = s.Pluck(obj, &i)
+	err = s.Pluck(&i, obj...)
 
 	return
 }
 
-func (s *Session) Pluck(obj any, v any) (err error) {
+func (s *Session) Pluck(v any, obj ...IModel) (err error) {
 	defer s.reset()
 
 	if s.table == nil {
-		s.table, err = s.orm.GetModelInfo(obj)
+		if len(obj) == 0 {
+			return ErrMissingModel
+		}
+
+		s.table, err = s.orm.getModelInfo(obj[0])
 		if err != nil {
 			return
 		}
 	}
 
 	var rows *sql.Rows
-
-	if rows, err = s.Query(s.BuildSelectSQL()); err != nil {
+	if rows, err = s.Query(s.buildSelectSQL()); err != nil {
 		return
 	}
 

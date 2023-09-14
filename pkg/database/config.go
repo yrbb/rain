@@ -1,6 +1,10 @@
 package database
 
-import "github.com/yrbb/rain/pkg/orm"
+import (
+	"time"
+
+	"github.com/yrbb/rain/pkg/orm"
+)
 
 const (
 	MaxLifetime  = 2 * 3600 // 单位 time.Second
@@ -29,4 +33,6 @@ func (c *Config) validate() {
 	if c.SlowThreshold <= 0 {
 		c.SlowThreshold = 1000
 	}
+
+	c.SlowThreshold *= float64(time.Millisecond)
 }

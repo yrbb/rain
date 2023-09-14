@@ -9,9 +9,7 @@ import (
 )
 
 var (
-	packageName string
-	parentName  string
-	advance     bool
+	parentName string
 
 	addCmd = &cobra.Command{
 		Use:     "add [command name]",
@@ -30,7 +28,6 @@ var (
 				CmdArgName: args[0],
 				CmdName:    commandName,
 				CmdParent:  parentName,
-				Advance:    advance,
 				Project: &Project{
 					PkgName:      getModImportPath(),
 					AbsolutePath: wd,
@@ -45,9 +42,7 @@ var (
 )
 
 func init() {
-	addCmd.Flags().StringVarP(&packageName, "package", "t", "", "target package name (e.g. github.com/spf13/hugo)")
 	addCmd.Flags().StringVarP(&parentName, "parent", "p", "rootCmd", "variable name of parent command for this command")
-	addCmd.Flags().BoolVarP(&advance, "advance", "a", false, "advance is true will genetate more whole command info")
 	cobra.CheckErr(addCmd.Flags().MarkDeprecated("package", "this operation has been removed."))
 }
 

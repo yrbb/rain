@@ -7,53 +7,60 @@ import (
 	"time"
 )
 
-func (s *Session) Update(obj ...any) (n int64, err error) {
+func (s *Session) Update(obj ...IModel) (rowsAffected int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
 		return 0, s.error
 	}
 
-	if len(obj) == 0 {
-		return 0, ErrMissingModel
-	}
-
-	if err = s.processUpdateParams(obj); err != nil {
+	if err = s.makeUpdateParams(obj); err != nil {
 		return 0, err
 	}
 
-	if n, err = s.updateDelete(s.BuildUpdateSQL()); err != nil || n == 0 {
+	if rowsAffected, err = s.updateDelete(s.buildUpdateSQL()); err != nil || rowsAffected == 0 {
 		return 0, err
 	}
 
-	oi := reflect.Indirect(reflect.ValueOf(obj[0]))
+	if len(obj) > 0 {
+		oi := reflect.Indirect(reflect.ValueOf(obj[0]))
 
-	for idx, field := range s.table.Fields {
-		if val, ok := s.set[field]; ok {
-			if _, ok := val.(rawStore); ok {
-				continue
+		for idx, field := range s.table.Fields {
+			if val, ok := s.set[field]; ok {
+				if _, ok := val.(rawStore); ok {
+					continue
+				}
+
+				_ = convertAssign(oi.Field(idx+1).Addr().Interface(), val)
 			}
-
-			_ = convertAssign(oi.Field(idx+1).Addr().Interface(), val)
 		}
 	}
 
-	return n, nil
+	return rowsAffected, nil
 }
 
-func (s *Session) processUpdateParams(obj []any) error {
+func (s *Session) makeUpdateParams(obj []IModel) (err error) {
+	lo := len(obj)
+	if lo == 0 {
+		if s.table == nil || len(s.set) == 0 {
+			return ErrMissingModel
+		}
+
+		if len(s.where) == 0 {
+			return ErrWhereEmpty
+		}
+
+		return
+	}
+
 	if s.table == nil {
-		table, err := s.orm.GetModelInfo(obj[0])
+		s.table, err = s.orm.getModelInfo(obj[0])
 		if err != nil {
 			return err
 		}
-
-		s.table = table
 	}
 
-	if len(obj) > 1 {
-		s.Set(obj[1])
-	} else if s.set == nil || len(s.set) == 0 {
+	if len(s.set) == 0 {
 		s.Set(obj[0])
 	}
 
@@ -61,11 +68,9 @@ func (s *Session) processUpdateParams(obj []any) error {
 		return s.error
 	}
 
-	if s.where == nil || len(s.where) == 0 {
-		if model, ok := obj[0].(IModel); ok && model.Original() != nil {
-			if err := s.parseWhereCondition(model); err != nil {
-				return err
-			}
+	if len(s.where) == 0 && obj[0].Original() != nil {
+		if err = s.makeWhereCondition(obj[0]); err != nil {
+			return err
 		}
 	}
 
@@ -76,22 +81,28 @@ func (s *Session) processUpdateParams(obj []any) error {
 	return nil
 }
 
-func (s *Session) Delete(obj any) (n int64, err error) {
+func (s *Session) Delete(obj ...IModel) (rowsAffected int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
 		return 0, s.error
 	}
 
-	if s.table, err = s.orm.GetModelInfo(obj); err != nil {
-		return 0, err
+	if s.table == nil {
+		if len(obj) == 0 {
+			return 0, ErrMissingModel
+		}
+
+		if s.table, err = s.orm.getModelInfo(obj[0]); err != nil {
+			return 0, err
+		}
 	}
 
-	if n, err = s.updateDelete(s.BuildDeleteSQL()); err != nil {
+	if rowsAffected, err = s.updateDelete(s.buildDeleteSQL()); err != nil {
 		return 0, nil
 	}
 
-	return n, nil
+	return rowsAffected, nil
 }
 
 func (s *Session) updateDelete(sqlStr string, values []any, err error) (int64, error) {
@@ -99,41 +110,45 @@ func (s *Session) updateDelete(sqlStr string, values []any, err error) (int64, e
 		return 0, err
 	}
 
-	if s.params == nil || len(s.params) == 0 {
-		s.params = map[string]any{}
-		for _, v := range s.where {
-			if v.Operator != "=" {
-				continue
-			}
-
-			s.params[v.Column] = v.Value
-		}
-	}
-
-	res, err := s.Statement(sqlStr, values...)
+	res, err := s.Exec(sqlStr, values...)
 	if err != nil {
 		return 0, err
 	}
 
-	if s.rowsAffected, err = res.RowsAffected(); err != nil {
-		return 0, err
-	}
+	s.rowsAffected, err = res.RowsAffected()
 
-	return s.rowsAffected, nil
+	return s.rowsAffected, err
 }
 
-func (s *Session) Insert(obj ...any) (n int64, err error) {
+func (s *Session) Insert(obj ...IModel) (insertId int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
 		return 0, s.error
 	}
 
-	if err = s.processInsertParams(obj); err != nil {
-		return 0, err
+	if len(obj) == 0 {
+		if s.table == nil || len(s.args) == 0 {
+			return 0, ErrMissingModel
+		}
+	} else {
+		if s.table == nil {
+			s.table, err = s.orm.getModelInfo(obj[0])
+			if err != nil {
+				return 0, err
+			}
+		}
+
+		if len(s.args) == 0 {
+			s.Values(obj[0])
+		}
+
+		if s.error != nil {
+			return 0, s.error
+		}
 	}
 
-	sqlStr, values, err := s.BuildInsertSQL()
+	sqlStr, values, err := s.buildInsertSQL()
 
 	if s.error != nil {
 		return 0, s.error
@@ -143,134 +158,64 @@ func (s *Session) Insert(obj ...any) (n int64, err error) {
 		return 0, err
 	}
 
-	res, err := s.Statement(sqlStr, values...)
+	res, err := s.Exec(sqlStr, values...)
 	if err != nil {
 		return 0, err
 	}
 
-	insertID, err := res.LastInsertId()
+	insertId, err = res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
 
-	if s.tx == nil || s.insertID == 0 {
-		s.insertID = insertID
+	if s.values == 1 && len(obj) > 0 && s.table.AutoIncrement != nil {
+		oi := reflect.Indirect(reflect.ValueOf(obj[0]))
+
+		aIdx := 0
+		for idx, field := range s.table.Fields {
+			if field == *s.table.AutoIncrement {
+				aIdx = idx
+				break
+			}
+		}
+
+		_ = convertAssign(oi.Field(aIdx+1).Addr().Interface(), insertId)
+	}
+
+	if s.tx == nil || s.insertId == 0 {
+		s.insertId = insertId
 	}
 
 	if s.tx == nil || s.rowsAffected == 0 {
 		s.rowsAffected, _ = res.RowsAffected()
 	}
 
-	return insertID, nil
+	return insertId, nil
 }
 
-func (s *Session) processInsertParams(obj []any) error {
-	lo := len(obj)
-	if lo == 0 {
-		return ErrMissingModel
-	}
+func (s *Session) Exec(sqlStr string, values ...any) (res sql.Result, err error) {
+	defer func() {
+		s.after(err)
+	}()
 
-	if s.table == nil {
-		table, err := s.orm.GetModelInfo(obj[0])
-		if err != nil {
-			return err
-		}
-
-		s.table = table
-	}
-
-	// TODO 一次插多条的情况未考虑
-	if exists := s.args != nil && len(s.args) > 0; lo > 1 {
-		if exists {
-			return ErrDuplicateValues
-		}
-
-		s.Values(obj[1])
-	} else if !exists {
-		s.Values(obj[0])
-	}
-
-	if s.error != nil {
-		return s.error
-	}
-
-	return nil
-}
-
-func (s *Session) Statement(sqlStr string, values ...any) (res sql.Result, err error) {
 	s.queryStart = time.Now()
 
-	if s.tx != nil {
-		res, err = s.tx.Exec(sqlStr, values...)
-	} else {
-		if s.queryTimeout == 0 {
-			res, err = s.orm.db.Exec(sqlStr, values...)
-		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), s.queryTimeout)
-			res, err = s.orm.db.ExecContext(ctx, sqlStr, values...)
-			cancel()
-		}
+	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	if s.queryTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, s.queryTimeout)
 	}
+	defer cancel()
 
-	s.after("statement", err == nil)
+	if s.tx != nil {
+		res, err = s.tx.ExecContext(ctx, sqlStr, values...)
+	} else {
+		res, err = s.orm.db.ExecContext(ctx, sqlStr, values...)
+	}
 
 	return
 }
 
-func (s *Session) Save(obj any, params map[string]any) (int64, error) {
-	model, ok := obj.(IModel)
-	if !ok {
-		return 0, ErrMissingModel
-	}
-
-	if model.Original() == nil {
-		return s.Set(params).Update(obj)
-	}
-
-	if len(params) == 0 {
-		return 0, ErrUpdateParamsEmpty
-	}
-
-	ov := reflect.ValueOf(obj)
-
-	if ov.Kind() != reflect.Ptr {
-		return 0, ErrNeedPointer
-	}
-
-	var err error
-
-	if s.table == nil {
-		if s.table, err = s.orm.GetModelInfo(obj); err != nil {
-			return 0, err
-		}
-	}
-
-	if s.where == nil || len(s.where) == 0 {
-		if err = s.parseWhereCondition(model); err != nil {
-			return 0, err
-		}
-	}
-
-	s.params = params
-
-	// bind params -> struct
-	for idx, field := range s.table.Fields {
-		if val, ok := params[field]; ok {
-			_ = convertAssign(ov.Elem().Field(idx+1).Addr().Interface(), val)
-
-			s.Set(field, val)
-		}
-	}
-
-	n, err := s.updateDelete(s.BuildUpdateSQL())
-	if err != nil || n == 0 {
-		return 0, err
-	}
-
-	return n, nil
-}
-
-func (s *Session) parseWhereCondition(m IModel) error {
+func (s *Session) makeWhereCondition(m IModel) error {
 	ori := *(m.Original())
 
 	args := map[string]any{}

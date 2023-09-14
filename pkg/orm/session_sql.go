@@ -20,8 +20,8 @@ type rawStore struct {
 	value string
 }
 
-func (s *Session) Table(obj any) *Session {
-	if ti, err := s.orm.GetModelInfo(obj); err != nil {
+func (s *Session) Table(obj IModel) *Session {
+	if ti, err := s.orm.getModelInfo(obj); err != nil {
 		s.error = err
 	} else {
 		s.table = ti
@@ -174,13 +174,15 @@ func (s *Session) Set(column any, value ...any) *Session {
 		} else {
 			s.set[v] = nil
 		}
-	case map[string]any: // fixme append
-		s.set = v
+	case map[string]any:
+		for key, val := range v {
+			s.set[key] = val
+		}
 	default:
 		if s.table == nil {
 			var err error
 
-			if s.table, err = s.orm.GetModelInfo(column); err != nil {
+			if s.table, err = s.orm.getModelInfo(column); err != nil {
 				s.error = err
 
 				return s
@@ -260,55 +262,54 @@ func (s *Session) SetRaw(column, value string) *Session {
 }
 
 func (s *Session) Values(value any) *Session {
-	if s.fields != nil {
-		s.error = ErrDuplicateValues
+	hasFields := len(s.fields) > 0
 
-		return s
+	if kv, ok := value.(map[string]any); ok {
+		value = []map[string]any{kv}
 	}
 
-	s.fields = []string{}
-	s.args = []any{}
-
-	if vals, ok := value.(map[string]any); ok {
-		s.params = vals
-
-		for _, field := range s.table.Fields {
-			if val, ok := vals[field]; ok {
-				s.fields = append(s.fields, field)
-				s.args = append(s.args, val)
+	if kvs, ok := value.([]map[string]any); ok {
+		for _, kv := range kvs {
+			if hasFields && len(kv) != len(s.fields) {
+				s.error = ErrFieldsNotMatch
+				return s
 			}
+
+			for k, v := range kv {
+				if !hasFields {
+					s.fields = append(s.fields, k)
+				}
+
+				s.args = append(s.args, v)
+			}
+
+			hasFields = true
+			s.values++
 		}
 
 		return s
 	}
 
 	if s.table == nil {
-		var err error
-
-		s.table, err = s.orm.GetModelInfo(value)
-		if err != nil {
-			s.error = err
-
+		if s.table, s.error = s.orm.getModelInfo(value); s.error != nil {
 			return s
 		}
 	}
 
 	vi := reflect.Indirect(reflect.ValueOf(value))
 
-	s.params = map[string]any{}
-
 	for idx, field := range s.table.Fields {
 		if s.table.AutoIncrement != nil && field == *s.table.AutoIncrement && utils.ToInt64(vi.Field(idx+1).Interface()) == 0 {
 			continue
 		}
 
-		arg := vi.Field(idx + 1).Interface()
+		if !hasFields {
+			s.fields = append(s.fields, field)
+		}
 
-		s.fields = append(s.fields, field)
-		s.args = append(s.args, arg)
-
-		s.params[field] = arg
+		s.args = append(s.args, vi.Field(idx+1).Interface())
 	}
+	s.values++
 
 	return s
 }

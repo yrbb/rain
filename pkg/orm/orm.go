@@ -16,10 +16,9 @@ import (
 type Orm struct {
 	modelParser
 
-	config *Config
 	db     *sql.DB
-
-	longQueryTime float64
+	config *Config
+	exitCh chan struct{}
 }
 
 type Config struct {
@@ -33,7 +32,7 @@ type Config struct {
 	PoolThreshold int     `toml:"poolThreshold"`
 }
 
-func Open(c *Config) (*Orm, error) {
+func New(c *Config) (*Orm, error) {
 	if c.Type == "" {
 		return nil, errors.New("data type empty")
 	}
@@ -42,6 +41,7 @@ func Open(c *Config) (*Orm, error) {
 
 	o := &Orm{
 		config: c,
+		exitCh: make(chan struct{}),
 	}
 
 	db, err := sql.Open(c.Type, c.Addr)
@@ -56,11 +56,11 @@ func Open(c *Config) (*Orm, error) {
 	o.db = db
 
 	if c.MaxIdleConns > 0 {
-		o.WithMaxIdleConns(c.MaxIdleConns)
+		o.SetMaxIdleConns(c.MaxIdleConns)
 	}
 
 	if c.MaxOpenConns > 0 {
-		o.WithMaxOpenConns(c.MaxOpenConns)
+		o.SetMaxOpenConns(c.MaxOpenConns)
 	}
 
 	go o.logStatus()
@@ -72,16 +72,16 @@ func Open(c *Config) (*Orm, error) {
 	return o, nil
 }
 
-func (o *Orm) WithMaxIdleConns(n int) {
+func (o *Orm) SetMaxIdleConns(n int) {
 	o.db.SetMaxIdleConns(n)
 }
 
-func (o *Orm) WithMaxOpenConns(n int) {
+func (o *Orm) SetMaxOpenConns(n int) {
 	o.config.MaxOpenConns = n
 	o.db.SetMaxOpenConns(n)
 }
 
-func (o *Orm) WithConnMaxLifetime(d time.Duration) {
+func (o *Orm) SetConnMaxLifetime(d time.Duration) {
 	o.db.SetConnMaxLifetime(d)
 }
 
@@ -93,6 +93,8 @@ func (o *Orm) Close() {
 	if err := o.db.Close(); err != nil {
 		slog.Error("close db err", slog.String("error", err.Error()))
 	}
+
+	o.exitCh <- struct{}{}
 }
 
 func (o *Orm) DB() *sql.DB {
@@ -103,9 +105,15 @@ func (o *Orm) NewSession() *Session {
 	return &Session{orm: o}
 }
 
-// TODO exit
 func (o *Orm) logStatus() {
-	for range time.NewTicker(time.Second).C {
+	ticker := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-o.exitCh:
+			return
+		case <-ticker.C:
+		}
+
 		if o.config.PoolThreshold == -1 {
 			return
 		}
@@ -117,12 +125,12 @@ func (o *Orm) logStatus() {
 			percent := float32(used) / float32(o.config.MaxOpenConns) * 100
 
 			slog.Warn(fmt.Sprintf(
-				"ORM: 数据库连接使用率高, used: %d/%d, percent: %.2f, threshold: %d%%, name: %s",
+				"数据库连接使用率高 [%s], used: %d/%d, percent: %.2f, threshold: %d%%",
+				o.config.Name,
 				used,
 				o.config.MaxOpenConns,
 				percent,
 				o.config.PoolThreshold,
-				o.config.Name,
 			))
 		}
 	}
