@@ -3,6 +3,7 @@ package orm
 import (
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/yrbb/rain/pkg/utils"
@@ -17,10 +18,11 @@ type conditionStore struct {
 }
 
 type rawStore struct {
-	value string
+	key string
+	val []any
 }
 
-func (s *Session) Table(obj IModel) *Session {
+func (s *Session) Table(obj any) *Session {
 	if ti, err := s.orm.getModelInfo(obj); err != nil {
 		s.error = err
 	} else {
@@ -56,52 +58,20 @@ func (s *Session) ForceIndex(index string) *Session {
 	return s
 }
 
-func (s *Session) Where(column string, value any, operators ...string) *Session {
-	operator := operateEquals
-	if len(operators) > 0 {
-		operator = operators[0]
-	}
-
-	s.criteria(&s.where, column, operator, value, logicalAnd)
-
-	return s
+func (s *Session) Where(value ...any) *Session {
+	return s.setWhere(logicalAnd, value)
 }
 
-func (s *Session) OrWhere(column string, value any, operators ...string) *Session {
-	operator := operateEquals
-	if len(operators) > 0 {
-		operator = operators[0]
-	}
-
-	s.criteria(&s.where, column, operator, value, logicalOr)
-
-	return s
+func (s *Session) OrWhere(value ...any) *Session {
+	return s.setWhere(logicalOr, value)
 }
 
-func (s *Session) WhereMap(wheres map[string]any) *Session {
-	for k, v := range wheres {
-		s.Where(k, v)
+func (s *Session) GroupBy(group string) *Session {
+	if s.groupBy == nil {
+		s.groupBy = []string{}
 	}
 
-	return s
-}
-
-func (s *Session) WhereRaw(raw string) *Session {
-	if raw == "" {
-		return s
-	}
-
-	s.criteria(&s.where, "", "", rawStore{value: raw}, logicalAnd)
-
-	return s
-}
-
-func (s *Session) GroupBy(grainp string) *Session {
-	if s.grainpBy == nil {
-		s.grainpBy = []string{}
-	}
-
-	s.grainpBy = append(s.grainpBy, grainp)
+	s.groupBy = append(s.groupBy, group)
 
 	return s
 }
@@ -190,31 +160,10 @@ func (s *Session) Set(column any, value ...any) *Session {
 		}
 
 		r := reflect.Indirect(reflect.ValueOf(column))
-		m := r.Field(0).Interface().(Model)
-
-		if m.original != nil {
-			s.setFromCompare(&r, m)
-		} else {
-			s.setFromModel(&r, value)
-		}
+		s.setFromModel(&r, value)
 	}
 
 	return s
-}
-
-func (s *Session) setFromCompare(r *reflect.Value, m Model) {
-	for _, idx := range m.colIdx {
-		nv := (*r).Field(idx).Interface()
-		ov := (*m.original).Elem().Field(idx).Interface()
-
-		if nv != ov {
-			s.set[s.table.Fields[idx-1]] = nv
-		}
-	}
-
-	if len(s.set) == 0 {
-		s.error = ErrNotSetUpdateField
-	}
 }
 
 func (s *Session) setFromModel(r *reflect.Value, value []any) {
@@ -225,17 +174,8 @@ func (s *Session) setFromModel(r *reflect.Value, value []any) {
 			fields[val.(string)] = true
 		}
 	} else {
-		exps := map[string]bool{}
-
-		// FIXME 主键不一定是自增的
-		if len(s.table.PrimaryKeys) > 0 {
-			for _, val := range s.table.PrimaryKeys {
-				exps[*val] = true
-			}
-		}
-
-		for _, field := range s.table.Fields {
-			if _, ok := exps[field]; ok {
+		for idx, field := range s.table.Fields {
+			if slices.Contains(s.table.PrimaryKeys, idx) {
 				continue
 			}
 
@@ -256,7 +196,7 @@ func (s *Session) SetRaw(column, value string) *Session {
 		s.set = map[string]any{}
 	}
 
-	s.set[column] = rawStore{value: value}
+	s.set[column] = rawStore{key: value}
 
 	return s
 }
@@ -299,7 +239,7 @@ func (s *Session) Values(value any) *Session {
 	vi := reflect.Indirect(reflect.ValueOf(value))
 
 	for idx, field := range s.table.Fields {
-		if s.table.AutoIncrement != nil && field == *s.table.AutoIncrement && utils.ToInt64(vi.Field(idx+1).Interface()) == 0 {
+		if idx == s.table.AutoIncrement && utils.ToInt64(vi.Field(idx).Interface()) == 0 {
 			continue
 		}
 
@@ -307,10 +247,76 @@ func (s *Session) Values(value any) *Session {
 			s.fields = append(s.fields, field)
 		}
 
-		s.args = append(s.args, vi.Field(idx+1).Interface())
+		s.args = append(s.args, vi.Field(idx).Interface())
 	}
 	s.values++
 
+	return s
+}
+
+func (s *Session) setWhere(connector string, values []any) *Session {
+	l := len(values)
+	if l == 0 {
+		return s
+	}
+
+	if l == 1 {
+		switch val := values[0].(type) {
+		case string:
+			s.criteria(&s.where, "", "", rawStore{key: val}, connector)
+		case map[string]any:
+			for k, v := range val {
+				s.criteria(&s.where, k, operateEquals, v, connector)
+			}
+		default:
+			s.error = ErrUnsupportedWhereType
+		}
+
+		return s
+	}
+
+	key, ok := values[0].(string)
+	if !ok {
+		s.error = ErrUnsupportedWhereType
+		return s
+	}
+
+	if n := strings.Count(key, "?"); n > 0 {
+		if len(values)-1 != n {
+			s.error = ErrWhereArgsNotMatch
+			return s
+		}
+
+		s.criteria(&s.where, "", "", rawStore{key: key, val: values[1:]}, connector)
+		return s
+	}
+
+	if l > 3 {
+		s.error = ErrUnsupportedWhereType
+		return s
+	}
+
+	operator := operateEquals
+	value := values[1]
+
+	if l == 3 {
+		hasOperator := false
+		for i, v := range values {
+			if k, ok := v.(string); ok && slices.Contains(operates, k) {
+				hasOperator = true
+				operator = values[i].(string)
+			} else {
+				value = values[i]
+			}
+		}
+
+		if !hasOperator {
+			s.error = ErrUnsupportedWhereType
+			return s
+		}
+	}
+
+	s.criteria(&s.where, key, operator, value, connector)
 	return s
 }
 

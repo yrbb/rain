@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (s *Session) Update(obj ...IModel) (rowsAffected int64, err error) {
+func (s *Session) Update(obj ...any) (rowsAffected int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -31,7 +31,7 @@ func (s *Session) Update(obj ...IModel) (rowsAffected int64, err error) {
 					continue
 				}
 
-				_ = convertAssign(oi.Field(idx+1).Addr().Interface(), val)
+				_ = convertAssign(oi.Field(idx).Addr().Interface(), val)
 			}
 		}
 	}
@@ -39,7 +39,7 @@ func (s *Session) Update(obj ...IModel) (rowsAffected int64, err error) {
 	return rowsAffected, nil
 }
 
-func (s *Session) makeUpdateParams(obj []IModel) (err error) {
+func (s *Session) makeUpdateParams(obj []any) (err error) {
 	lo := len(obj)
 	if lo == 0 {
 		if s.table == nil || len(s.set) == 0 {
@@ -68,7 +68,7 @@ func (s *Session) makeUpdateParams(obj []IModel) (err error) {
 		return s.error
 	}
 
-	if len(s.where) == 0 && obj[0].Original() != nil {
+	if len(s.where) == 0 {
 		if err = s.makeWhereCondition(obj[0]); err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ func (s *Session) makeUpdateParams(obj []IModel) (err error) {
 	return nil
 }
 
-func (s *Session) Delete(obj ...IModel) (rowsAffected int64, err error) {
+func (s *Session) Delete(obj ...any) (rowsAffected int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -95,6 +95,12 @@ func (s *Session) Delete(obj ...IModel) (rowsAffected int64, err error) {
 
 		if s.table, err = s.orm.getModelInfo(obj[0]); err != nil {
 			return 0, err
+		}
+
+		if len(s.where) == 0 {
+			if err = s.makeWhereCondition(obj[0]); err != nil {
+				return 0, err
+			}
 		}
 	}
 
@@ -120,7 +126,7 @@ func (s *Session) updateDelete(sqlStr string, values []any, err error) (int64, e
 	return s.rowsAffected, err
 }
 
-func (s *Session) Insert(obj ...IModel) (insertId int64, err error) {
+func (s *Session) Insert(obj ...any) (insertId int64, err error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -168,18 +174,9 @@ func (s *Session) Insert(obj ...IModel) (insertId int64, err error) {
 		return 0, err
 	}
 
-	if s.values == 1 && len(obj) > 0 && s.table.AutoIncrement != nil {
+	if s.values == 1 && len(obj) > 0 && s.table.AutoIncrement > -1 {
 		oi := reflect.Indirect(reflect.ValueOf(obj[0]))
-
-		aIdx := 0
-		for idx, field := range s.table.Fields {
-			if field == *s.table.AutoIncrement {
-				aIdx = idx
-				break
-			}
-		}
-
-		_ = convertAssign(oi.Field(aIdx+1).Addr().Interface(), insertId)
+		_ = convertAssign(oi.Field(s.table.AutoIncrement).Addr().Interface(), insertId)
 	}
 
 	if s.tx == nil || s.insertId == 0 {
@@ -194,9 +191,7 @@ func (s *Session) Insert(obj ...IModel) (insertId int64, err error) {
 }
 
 func (s *Session) Exec(sqlStr string, values ...any) (res sql.Result, err error) {
-	defer func() {
-		s.after(err)
-	}()
+	defer s.after("exec", err)
 
 	s.queryStart = time.Now()
 
@@ -215,30 +210,25 @@ func (s *Session) Exec(sqlStr string, values ...any) (res sql.Result, err error)
 	return
 }
 
-func (s *Session) makeWhereCondition(m IModel) error {
-	ori := *(m.Original())
-
-	args := map[string]any{}
-	for _, idx := range m.ColIdx() {
-		args[s.table.Fields[idx-1]] = ori.Elem().Field(idx).Interface()
-	}
+func (s *Session) makeWhereCondition(m any) error {
+	rv := reflect.Indirect(reflect.ValueOf(m))
 
 	find := false
 	where := map[string]any{}
 
 	// has primary key
 	if len(s.table.PrimaryKeys) > 0 {
-		for _, pk := range s.table.PrimaryKeys {
-			if v, ok := args[*pk]; ok {
+		for _, i := range s.table.PrimaryKeys {
+			if val := rv.Field(i).Interface(); isZero(val) {
+				find = false
+			} else {
 				find = true
-				where[*pk] = v
-
-				continue
+				where[s.table.Fields[i]] = val
 			}
 
-			find = false
-
-			break
+			if !find {
+				break
+			}
 		}
 	}
 
@@ -248,16 +238,16 @@ func (s *Session) makeWhereCondition(m IModel) error {
 			where = map[string]any{}
 
 			for _, uq := range uqs {
-				if v, ok := args[*uq]; ok {
+				if val := rv.Field(uq).Interface(); isZero(val) {
+					find = false
+				} else {
 					find = true
-					where[*uq] = v
-
-					continue
+					where[s.table.Fields[uq]] = val
 				}
 
-				find = false
-
-				break
+				if !find {
+					break
+				}
 			}
 
 			if find {

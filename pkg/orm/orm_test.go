@@ -2,12 +2,16 @@ package orm
 
 import (
 	"log"
+	"log/slog"
+	"os"
 	"testing"
+
+	"github.com/yrbb/rain/pkg/logger"
 )
 
 type TestModel struct {
-	Model
 	Id   int64  `db:"id primaryKey autoIncrement"`
+	Key  int64  `db:"-"`
 	Name string `db:"name"`
 }
 
@@ -32,6 +36,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	logger.SetLevel("debug")
 
 	m.Run()
 }
@@ -63,28 +70,38 @@ func TestUpdate(t *testing.T) {
 	res, err := testIns.Update(&tm)
 	t.Log(res, err)
 
-	res, err = testIns.Where("id", 2).Set("name", "lalalada").Update(&TestModel{})
+	res, err = testIns.Where("id", 2).Set("name", "lalaladda").Update(&TestModel{})
 	t.Log(res, err)
 
-	res, err = testIns.Table(&TestModel{}).Where("id", 3).Set("name", "hahahada").Update()
+	res, err = testIns.Table(&TestModel{}).Where("id", 3).Set("name", "hahashada").Update()
+	t.Log(res, err)
+
+	res, err = testIns.Update(&TestModel{
+		Id:   1,
+		Name: "lalalalala",
+	})
 	t.Log(res, err)
 }
 
-func TestSave(t *testing.T) {}
-
 func TestDelete(t *testing.T) {
-	res, err := testIns.Where("id", 10).Delete(&TestModel{})
+	res, err := testIns.Where("id", 12).Delete(&TestModel{})
 	t.Log(res, err)
 
 	res, err = testIns.Table(&TestModel{}).Where("id", 11).Delete()
+	t.Log(res, err)
+
+	res, err = testIns.Delete(&TestModel{Id: 13})
 	t.Log(res, err)
 }
 
 func TestGet(t *testing.T) {
 	tm := TestModel{}
 	res, err := testIns.Where("id", 1).Get(&tm)
-	t.Log(res, err)
-	t.Log(tm.Id, tm.Name)
+	t.Log(res, err, tm)
+
+	tm2 := TestModel{}
+	res, err = testIns.Where("id = ?", 2).Get(&tm2)
+	t.Log(res, err, tm2)
 }
 
 func TestGetMap(t *testing.T) {
@@ -97,6 +114,10 @@ func TestFind(t *testing.T) {
 	tms := []TestModel{}
 	res, err := testIns.Where("id", []int{1, 2}, "IN").Find(&tms)
 	t.Log(res, err, tms)
+
+	tms2 := []TestModel{}
+	res, err = testIns.Where("id not in (?) and id = 4", []int{1, 2, 3}).Find(&tms2)
+	t.Log(res, err, tms2)
 }
 
 func TestFindMap(t *testing.T) {

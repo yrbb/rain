@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/yrbb/rain/pkg/utils"
@@ -14,10 +15,9 @@ import (
 )
 
 type Orm struct {
-	modelParser
-
 	db     *sql.DB
 	config *Config
+	models sync.Map
 	exitCh chan struct{}
 }
 

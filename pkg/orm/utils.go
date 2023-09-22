@@ -158,3 +158,40 @@ func bytesClone(b []byte) []byte {
 
 	return c
 }
+
+func sliceCount(a any) int {
+	v := reflect.ValueOf(a)
+	if v.Kind() != reflect.Slice {
+		return 0
+	}
+
+	return v.Len()
+}
+
+func convertSlice(a any) []any {
+	v := reflect.ValueOf(a)
+	if v.Kind() != reflect.Slice {
+		return nil
+	}
+
+	result := make([]any, v.Len())
+	for i := 0; i < v.Len(); i++ {
+		elemValue := v.Index(i)
+		switch elemValue.Kind() {
+		case reflect.String:
+			result[i] = elemValue.String()
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			result[i] = elemValue.Int()
+		case reflect.Float32, reflect.Float64:
+			result[i] = elemValue.Float()
+		default:
+			result[i] = elemValue.Interface()
+		}
+	}
+
+	return result
+}
+
+func isZero(x any) bool {
+	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
+}

@@ -8,9 +8,7 @@ import (
 )
 
 func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.Rows, err error) {
-	defer func() {
-		s.after(err)
-	}()
+	defer s.after("query", err)
 
 	if len(errs) > 0 && errs[0] != nil {
 		return nil, errs[0]
@@ -42,7 +40,7 @@ func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.R
 	return
 }
 
-func (s *Session) Get(obj IModel) (bool, error) {
+func (s *Session) Get(obj any) (bool, error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -54,7 +52,7 @@ func (s *Session) Get(obj IModel) (bool, error) {
 	return find, err
 }
 
-func (s *Session) GetMap(obj IModel, m map[string]any) (bool, error) {
+func (s *Session) GetMap(obj any, m map[string]any) (bool, error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -68,14 +66,14 @@ func (s *Session) GetMap(obj IModel, m map[string]any) (bool, error) {
 
 	if find {
 		for _, idx := range s.colIdx {
-			m[s.table.Fields[idx-1]] = v.Elem().Field(idx).Interface()
+			m[s.table.Fields[idx]] = v.Elem().Field(idx).Interface()
 		}
 	}
 
 	return find, err
 }
 
-func (s *Session) getRow(obj IModel) (v reflect.Value, find bool, err error) {
+func (s *Session) getRow(obj any) (v reflect.Value, find bool, err error) {
 	s.Limit(1)
 
 	if v, err = s.queryCheck(obj); err != nil {
@@ -103,22 +101,6 @@ func (s *Session) getRow(obj IModel) (v reflect.Value, find bool, err error) {
 		}
 
 		find = true
-	}
-
-	if err == nil {
-		newValue := reflect.New(v.Elem().Type())
-
-		for _, idx := range s.colIdx {
-			oi := newValue.Elem().Field(idx).Addr().Interface()
-			vi := v.Elem().Field(idx).Interface()
-
-			_ = convertAssign(oi, vi)
-		}
-
-		v.Elem().Field(0).Set(reflect.ValueOf(Model{
-			colIdx:   s.colIdx,
-			original: &newValue,
-		}))
 	}
 
 	return
@@ -186,13 +168,6 @@ func (s *Session) Find(obj any) (find bool, err error) {
 			return false, err
 		}
 
-		md := reflect.ValueOf(Model{
-			colIdx:   s.colIdx,
-			original: &nv,
-		})
-
-		nv.Elem().Field(0).Set(md)
-
 		if isPtr {
 			sv.Set(reflect.Append(sv, nv.Elem().Addr()))
 		} else {
@@ -203,7 +178,7 @@ func (s *Session) Find(obj any) (find bool, err error) {
 	return
 }
 
-func (s *Session) FindMap(obj IModel, m *[]map[string]any) (find bool, err error) {
+func (s *Session) FindMap(obj any, m *[]map[string]any) (find bool, err error) {
 	defer s.reset()
 
 	if s.error != nil {
@@ -240,7 +215,7 @@ func (s *Session) FindMap(obj IModel, m *[]map[string]any) (find bool, err error
 		mp := map[string]any{}
 
 		for _, idx := range s.colIdx {
-			key := s.table.Fields[idx-1]
+			key := s.table.Fields[idx]
 			mp[key] = v.Elem().Field(idx).Interface()
 		}
 
@@ -250,7 +225,19 @@ func (s *Session) FindMap(obj IModel, m *[]map[string]any) (find bool, err error
 	return
 }
 
-func (s *Session) queryCheck(obj IModel) (v reflect.Value, err error) {
+func (s *Session) queryCheck(obj any) (v reflect.Value, err error) {
+	v = reflect.ValueOf(obj)
+
+	if v.Kind() != reflect.Ptr {
+		err = ErrNeedPointer
+		return
+	}
+
+	if k := reflect.Indirect(v).Kind(); k != reflect.Struct {
+		err = ErrElementNeedStruct
+		return
+	}
+
 	v = reflect.ValueOf(obj)
 
 	if s.table == nil {
@@ -273,7 +260,7 @@ func (s *Session) makeSelectFields() {
 		for _, c := range s.columns {
 			for i, f := range s.table.Fields {
 				if f == c {
-					s.colIdx = append(s.colIdx, i+1)
+					s.colIdx = append(s.colIdx, i)
 					break
 				}
 			}
@@ -286,11 +273,11 @@ func (s *Session) makeSelectFields() {
 
 	for i, f := range s.table.Fields {
 		s.columns = append(s.columns, f)
-		s.colIdx = append(s.colIdx, i+1)
+		s.colIdx = append(s.colIdx, i)
 	}
 }
 
-func (s *Session) Count(obj ...IModel) (i int64, err error) {
+func (s *Session) Count(obj ...any) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("count(1) as count")
@@ -300,7 +287,7 @@ func (s *Session) Count(obj ...IModel) (i int64, err error) {
 	return
 }
 
-func (s *Session) Max(field string, obj ...IModel) (i int64, err error) {
+func (s *Session) Max(field string, obj ...any) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("max(" + field + ") as max")
@@ -310,7 +297,7 @@ func (s *Session) Max(field string, obj ...IModel) (i int64, err error) {
 	return
 }
 
-func (s *Session) Sum(field string, obj ...IModel) (i int64, err error) {
+func (s *Session) Sum(field string, obj ...any) (i int64, err error) {
 	s.columns = []string{}
 
 	s.Columns("sum(" + field + ") as sum")
@@ -320,7 +307,7 @@ func (s *Session) Sum(field string, obj ...IModel) (i int64, err error) {
 	return
 }
 
-func (s *Session) Pluck(v any, obj ...IModel) (err error) {
+func (s *Session) Pluck(v any, obj ...any) (err error) {
 	defer s.reset()
 
 	if s.table == nil {

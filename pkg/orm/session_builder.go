@@ -134,7 +134,7 @@ func (s *Session) buildSetString(isInsert bool) string {
 
 	for k, v := range s.set {
 		if rs, ok := v.(rawStore); ok {
-			arr = append(arr, "`"+k+"`"+" = "+rs.value)
+			arr = append(arr, "`"+k+"`"+" = "+rs.key)
 			continue
 		}
 
@@ -233,8 +233,8 @@ func (s *Session) buildOrderByString() string {
 }
 
 func (s *Session) buildGroupByString() string {
-	if len(s.grainpBy) > 0 {
-		return "GROUP BY " + strings.Join(s.grainpBy, ", ")
+	if len(s.groupBy) > 0 {
+		return "GROUP BY " + strings.Join(s.groupBy, ", ")
 	}
 
 	return ""
@@ -287,8 +287,29 @@ func (s *Session) buildCriteriaString(store []conditionStore) string {
 
 		useConnector = true
 
-		if v, ok := item.Value.(rawStore); ok {
-			statement += v.value
+		if rs, ok := item.Value.(rawStore); ok {
+			if len(rs.val) > 0 {
+				// 处理 IN, NOT IN
+				key := regIn.ReplaceAllString(rs.key, "IN (?)")
+				if strings.Count(key, "(?)") > 0 {
+					for _, val := range rs.val {
+						count := sliceCount(val)
+						if count == 0 {
+							continue
+						}
+
+						repl := strings.Repeat("?,", count-1) + "?"
+						repl = bracketOpen + repl + bracketClose
+
+						key = strings.Replace(key, "(?)", repl, 1)
+					}
+
+					statement += key
+					continue
+				}
+			}
+
+			statement += rs.key
 			continue
 		}
 
@@ -333,7 +354,20 @@ func (s *Session) getCriteriaValues(store []conditionStore) {
 			continue
 		}
 
-		if _, ok := item.Value.(rawStore); ok {
+		if rs, ok := item.Value.(rawStore); ok {
+			if len(rs.val) == 0 {
+				continue
+			}
+
+			for _, v := range rs.val {
+				// 处理 IN, NOT IN
+				if nv := convertSlice(v); nv == nil {
+					s.args = append(s.args, v)
+				} else {
+					s.args = append(s.args, nv...)
+				}
+			}
+
 			continue
 		}
 

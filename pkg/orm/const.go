@@ -1,6 +1,37 @@
 package orm
 
-import "errors"
+import (
+	"errors"
+	"regexp"
+)
+
+type TableName interface {
+	TableName() string
+}
+
+type BeforeCreate interface {
+	BeforeCreate(tx *Session)
+}
+
+type AfterCreate interface {
+	AfterCreate(tx *Session)
+}
+
+type BeforeUpdate interface {
+	BeforeUpdate(tx *Session)
+}
+
+type AfterUpdate interface {
+	AfterUpdate(tx *Session)
+}
+
+type BeforeDelete interface {
+	BeforeDelete(tx *Session)
+}
+
+type AfterDelete interface {
+	AfterDelete(tx *Session)
+}
 
 const (
 	keywordAutoIncrement = "autoIncrement"
@@ -13,22 +44,37 @@ const (
 	logicalAnd = "AND"
 	logicalOr  = "OR"
 
-	operateEquals = "="
-	// operateNotEquals          = "!="
-	// operateLessThan           = "<"
-	// operateLessThanOrEqual    = "<="
-	// operateGreaterThan        = ">"
-	// operateGreaterThanOrEqual = ">="
-	operateIn         = "IN"
-	operateNotIn      = "NOT IN"
-	operateIs         = "IS"
-	operateIsNot      = "IS NOT"
-	operateOrderByAsc = "ASC"
-	// operateOrderByDesc        = "DESC"
+	operateEquals             = "="
+	operateNotEquals          = "!="
+	operateLessThan           = "<"
+	operateLessThanOrEqual    = "<="
+	operateGreaterThan        = ">"
+	operateGreaterThanOrEqual = ">="
+	operateIn                 = "IN"
+	operateNotIn              = "NOT IN"
+	operateIs                 = "IS"
+	operateIsNot              = "IS NOT"
+	operateOrderByAsc         = "ASC"
+	operateOrderByDesc        = "DESC"
 
 	bracketOpen  = "("
 	bracketClose = ")"
 )
+
+var operates = []string{
+	operateEquals,
+	operateNotEquals,
+	operateLessThan,
+	operateLessThanOrEqual,
+	operateGreaterThan,
+	operateGreaterThanOrEqual,
+	operateIn,
+	operateNotIn,
+	operateIs,
+	operateIsNot,
+}
+
+var regIn = regexp.MustCompile(`(?i)in\s*\(\s*\?\s*\)`)
 
 var (
 	// ErrRecordNotFound 错误：记录不存在
@@ -56,13 +102,19 @@ var (
 	ErrNoPrimaryKey = errors.New("not primary key")
 
 	// ErrNoPrimaryAndUnique 错误：没有主键和唯一键
-	ErrNoPrimaryAndUnique = errors.New("not primary key and unique key")
+	ErrNoPrimaryAndUnique = errors.New("no primary key and unique key")
 
 	// ErrUpdateParamsEmpty 错误：更新参数为空
 	ErrUpdateParamsEmpty = errors.New("update params empty")
 
 	// ErrDuplicateValues 错误：重复赋值
 	ErrDuplicateValues = errors.New("duplicate values")
+
+	// ErrUnsupportedWhereType 错误：不支持的类型
+	ErrUnsupportedWhereType = errors.New("unsupported where type")
+
+	// ErrWhereArgsNotMatch 错误：where 条件和参数不匹配
+	ErrWhereArgsNotMatch = errors.New("where args not match")
 
 	// ErrFieldsNotMatch 错误：字段不匹配
 	ErrFieldsNotMatch = errors.New("fields not match")

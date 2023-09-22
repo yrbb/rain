@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/yrbb/rain/pkg/logger"
 )
 
 type Session struct {
 	orm *Orm
 
 	error error
-	table *modelInfo
+	table *model
 
 	queryTimeout time.Duration
 	queryStart   time.Time
@@ -29,7 +31,7 @@ type Session struct {
 	options    []string
 	columns    []string
 	orderBy    []string
-	grainpBy   []string
+	groupBy    []string
 	forceIndex string
 	where      []conditionStore
 	limit      int
@@ -47,7 +49,7 @@ func (s *Session) SetTimeout(t time.Duration) *Session {
 	return s
 }
 
-func (s *Session) after(err error) {
+func (s *Session) after(typ string, err error) {
 	s.queryTime = float64(time.Since(s.queryStart).Milliseconds())
 
 	if s.orm.config.SlowThreshold > 0 && s.queryTime >= s.orm.config.SlowThreshold {
@@ -55,6 +57,10 @@ func (s *Session) after(err error) {
 			"long query [%.6f], sql: %s, args: %v",
 			s.queryTime, s.sql, s.args,
 		))
+	}
+
+	if typ == "query" && logger.GetLevel() != slog.LevelDebug {
+		return
 	}
 
 	var tableName string
@@ -66,13 +72,16 @@ func (s *Session) after(err error) {
 		slog.String("table", tableName),
 		slog.String("sql", s.sql),
 		slog.Any("args", s.args),
-		// slog.Any("params", s.params),
 		slog.Float64("took", s.queryTime),
 		slog.Int64("rowsAffected", s.rowsAffected),
 		slog.Int64("insertId", s.insertId),
 	}
 
-	slog.Debug("query", fields...)
+	if typ == "query" {
+		slog.Debug("query", fields...)
+	} else {
+		slog.Info("exec", fields...)
+	}
 }
 
 func (s *Session) reset() {
@@ -91,7 +100,7 @@ func (s *Session) reset() {
 	s.options = nil
 	s.columns = nil
 	s.orderBy = nil
-	s.grainpBy = nil
+	s.groupBy = nil
 	s.forceIndex = ""
 	s.where = nil
 	s.set = nil
