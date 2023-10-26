@@ -43,7 +43,6 @@ var (
 
 func init() {
 	addCmd.Flags().StringVarP(&parentName, "parent", "p", "rootCmd", "variable name of parent command for this command")
-	cobra.CheckErr(addCmd.Flags().MarkDeprecated("package", "this operation has been removed."))
 }
 
 // validateCmdName returns source without any dashes and underscore.
