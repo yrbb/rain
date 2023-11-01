@@ -320,6 +320,6 @@ func (p *Rain) OnConfigUpdate(callback func(config *Config)) {
 	p.onConfigUpdate = callback
 }
 
-func (p *Rain) Rainter() *gin.Engine {
+func (p *Rain) Router() *gin.Engine {
 	return p.engine
 }
