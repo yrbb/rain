@@ -5,7 +5,8 @@ func MainTemplate() []byte {
 
 import (
 	"github.com/yrbb/rain"
-	"{{ .PkgName }}/cmd"
+
+	_ "{{ .PkgName }}/cmd"
 )
 
 func main() {
@@ -21,8 +22,6 @@ func main() {
 	app.OnStop(func() {
 		// do something
 	})
-
-	cmd.Init(app.Context(nil))
 
 	app.Run()
 }
