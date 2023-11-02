@@ -36,14 +36,18 @@ func New(configs []Config) (*Redis, error) {
 	// set default logger
 	redis.SetLogger(&Logger{})
 
-	m := &Redis{}
-
 	initLen, initNum := 0, 0
 	for _, v := range configs {
 		if !v.Disable {
 			initLen++
 		}
 	}
+
+	if initLen == 0 {
+		return nil, nil
+	}
+
+	m := &Redis{}
 
 	for _, v := range configs {
 		v := v

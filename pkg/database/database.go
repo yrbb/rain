@@ -27,8 +27,6 @@ type Database struct {
 }
 
 func New(configs []Config) (*Database, error) {
-	m := &Database{}
-
 	initLen, initNum := 0, 0
 	for _, v := range configs {
 		if v.Disable {
@@ -37,6 +35,12 @@ func New(configs []Config) (*Database, error) {
 
 		initLen++
 	}
+
+	if initLen == 0 {
+		return nil, nil
+	}
+
+	m := &Database{}
 
 	for _, v := range configs {
 		v := v

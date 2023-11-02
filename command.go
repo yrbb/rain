@@ -62,6 +62,7 @@ func wrapCommandRunE(p *Rain, cmd *cobra.Command) {
 			cmd.Run(cmd, args)
 			p.stop()
 		})
+
 		return
 	}
 

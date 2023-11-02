@@ -143,14 +143,16 @@ func (p *Rain) serverReadyCheck() {
 
 	for i := 0; i <= 10; i++ {
 		if i == 10 {
-			p.stop()
 			logger.M().Error("HTTP 服务启动异常")
+
+			p.stop()
 			os.Exit(1)
 		}
 
 		time.Sleep(time.Millisecond * 10)
 
 		if serverIsReady(p.config.Server.Listen) {
+			logger.M().Info("HTTP 服务自检通过")
 			break
 		}
 	}
@@ -171,13 +173,23 @@ func (p *Rain) configUpdate(cfg *Config) {
 	logger.SetDebug(cfg.Debug)
 
 	if p.redis != nil {
-		p.redis.SetDebug(cfg.Debug)
 		p.redis.UpdateConfig(cfg.Redis)
+	} else {
+		p.redis, _ = redis.New(cfg.Redis)
+	}
+
+	if p.redis != nil {
+		p.redis.SetDebug(cfg.Debug)
+	}
+
+	if p.database != nil {
+		p.database.UpdateConfig(cfg.Database)
+	} else {
+		p.database, _ = database.New(cfg.Database)
 	}
 
 	if p.database != nil {
 		p.database.SetDebug(cfg.Debug)
-		p.database.UpdateConfig(cfg.Database)
 	}
 
 	if p.onConfigUpdate != nil {
@@ -258,13 +270,19 @@ func (p *Rain) initComponents() error {
 	if err != nil {
 		return err
 	}
-	p.redis.SetDebug(p.config.Debug)
+
+	if p.redis != nil {
+		p.redis.SetDebug(p.config.Debug)
+	}
 
 	p.database, err = database.New(p.config.Database)
 	if err != nil {
 		return err
 	}
-	p.database.SetDebug(p.config.Debug)
+
+	if p.database != nil {
+		p.database.SetDebug(p.config.Debug)
+	}
 
 	return nil
 }
@@ -287,7 +305,6 @@ func (p *Rain) cleanComponents() {
 
 	if p.watcher != nil {
 		p.watcher.Close()
-		logger.M().Info("停止配置监听器")
 	}
 }
 

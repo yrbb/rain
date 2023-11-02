@@ -3,6 +3,7 @@ package rain
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
@@ -64,6 +65,10 @@ func registerServerCommand(p *Rain) {
 }
 
 func serverIsReady(listen string) bool {
+	if strings.HasPrefix(listen, "0.0.0.0") {
+		listen = strings.Replace(listen, "0.0.0.0", "127.0.0.1", 1)
+	}
+
 	res, err := http.Get(fmt.Sprintf("http://%s/health", listen))
 	if err != nil {
 		return false
