@@ -18,4 +18,5 @@ func Execute() error {
 func init() {
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(initCmd)
+	// rootCmd.AddCommand(routerCmd)
 }
