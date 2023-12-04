@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"reflect"
+	"strings"
 	"time"
+
+	"github.com/yrbb/rain/pkg/utils"
 )
 
 func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.Rows, err error) {
@@ -40,87 +43,26 @@ func (s *Session) Query(sqlStr string, values []any, errs ...error) (rows *sql.R
 	return
 }
 
-func (s *Session) Get(obj any) (bool, error) {
-	defer s.reset()
-
-	if s.error != nil {
-		return false, s.error
-	}
-
-	_, find, err := s.getRow(obj)
-
-	return find, err
-}
-
-func (s *Session) GetMap(obj any, m map[string]any) (bool, error) {
-	defer s.reset()
-
-	if s.error != nil {
-		return false, s.error
-	}
-
-	v, find, err := s.getRow(obj)
+func (s *Session) QueryMap(sqlStr string, values []any) ([]map[string]any, error) {
+	rows, err := s.Query(sqlStr, values)
 	if err != nil {
-		return find, err
+		return nil, err
 	}
 
-	if find {
-		for _, idx := range s.colIdx {
-			m[s.table.Fields[idx]] = v.Elem().Field(idx).Interface()
-		}
-	}
+	defer rows.Close()
 
-	return find, err
+	return convertRows(rows)
 }
 
-func (s *Session) getRow(obj any) (v reflect.Value, find bool, err error) {
-	s.Limit(1)
-
-	if v, err = s.queryCheck(obj); err != nil {
-		return
-	}
-
-	ptrs := make([]any, len(s.colIdx))
-	for i, idx := range s.colIdx {
-		ptrs[i] = v.Elem().Field(idx).Addr().Interface()
-	}
-
-	var rows *sql.Rows
-	rows, err = s.Query(s.buildSelectSQL())
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	if rows.Next() {
-		if err = rows.Scan(ptrs...); err != nil {
-			return
-		}
-
-		find = true
-	}
-
-	return
-}
-
-func (s *Session) Find(obj any) (find bool, err error) {
-	defer s.reset()
-
-	if s.error != nil {
-		return find, s.error
-	}
-
+func (s *Session) QueryStruct(sqlStr string, values []any, obj any) error {
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr {
-		return find, ErrNeedPointer
+		return ErrNeedPointer
 	}
 
 	sv := reflect.Indirect(v)
 	if sv.Kind() != reflect.Slice {
-		return find, ErrNeedPtrToSlice
+		return ErrNeedPtrToSlice
 	}
 
 	et := sv.Type().Elem()
@@ -131,41 +73,51 @@ func (s *Session) Find(obj any) (find bool, err error) {
 		et = et.Elem()
 	}
 
-	if s.table == nil {
-		if s.table, err = s.orm.getModelInfo(et, true); err != nil {
-			return
+	rows, err := s.Query(sqlStr, values)
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+
+	cls, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	colIdx := []int{}
+	for i := 0; i < et.NumField(); i++ {
+		col := et.Field(i).Tag.Get("db")
+		if col != "" {
+			col = strings.Fields(col)[0]
+		} else {
+			col = et.Field(i).Tag.Get("json")
+			if col != "" {
+				col = strings.Split(col, ",")[0]
+			}
+		}
+
+		if col == "" {
+			col = et.Field(i).Name
+		}
+
+		if utils.SliceIn(col, cls) {
+			colIdx = append(colIdx, i)
 		}
 	}
 
-	if s.colIdx == nil {
-		s.makeSelectFields()
-	}
-
-	var rows *sql.Rows
-
-	rows, err = s.Query(s.buildSelectSQL())
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		_ = rows.Close()
-	}()
-
 	for rows.Next() {
-		find = true
-
 		nv := reflect.New(et)
 		ni := reflect.Indirect(nv)
 
 		var ptrs []any
 
-		for _, idx := range s.colIdx {
+		for _, idx := range colIdx {
 			ptrs = append(ptrs, ni.Field(idx).Addr().Interface())
 		}
 
 		if err = rows.Scan(ptrs...); err != nil {
-			return false, err
+			return err
 		}
 
 		if isPtr {
@@ -175,106 +127,7 @@ func (s *Session) Find(obj any) (find bool, err error) {
 		}
 	}
 
-	return
-}
-
-func (s *Session) FindMap(obj any, m *[]map[string]any) (find bool, err error) {
-	defer s.reset()
-
-	if s.error != nil {
-		return find, s.error
-	}
-
-	var v reflect.Value
-	if v, err = s.queryCheck(obj); err != nil {
-		return
-	}
-
-	ptrs := make([]any, len(s.colIdx))
-	for i, idx := range s.colIdx {
-		ptrs[i] = v.Elem().Field(idx).Addr().Interface()
-	}
-
-	var rows *sql.Rows
-	rows, err = s.Query(s.buildSelectSQL())
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	for rows.Next() {
-		if err = rows.Scan(ptrs...); err != nil {
-			return
-		}
-
-		find = true
-
-		mp := map[string]any{}
-
-		for _, idx := range s.colIdx {
-			key := s.table.Fields[idx]
-			mp[key] = v.Elem().Field(idx).Interface()
-		}
-
-		*m = append(*m, mp)
-	}
-
-	return
-}
-
-func (s *Session) queryCheck(obj any) (v reflect.Value, err error) {
-	v = reflect.ValueOf(obj)
-
-	if v.Kind() != reflect.Ptr {
-		err = ErrNeedPointer
-		return
-	}
-
-	if k := reflect.Indirect(v).Kind(); k != reflect.Struct {
-		err = ErrElementNeedStruct
-		return
-	}
-
-	v = reflect.ValueOf(obj)
-
-	if s.table == nil {
-		if s.table, err = s.orm.getModelInfo(obj); err != nil {
-			return
-		}
-	}
-
-	if s.colIdx == nil {
-		s.makeSelectFields()
-	}
-
-	return
-}
-
-func (s *Session) makeSelectFields() {
-	s.colIdx = []int{}
-
-	if s.columns != nil && len(s.columns) > 0 {
-		for _, c := range s.columns {
-			for i, f := range s.table.Fields {
-				if f == c {
-					s.colIdx = append(s.colIdx, i)
-					break
-				}
-			}
-		}
-
-		return
-	}
-
-	s.columns = []string{}
-
-	for i, f := range s.table.Fields {
-		s.columns = append(s.columns, f)
-		s.colIdx = append(s.colIdx, i)
-	}
+	return nil
 }
 
 func (s *Session) Count(obj ...any) (i int64, err error) {

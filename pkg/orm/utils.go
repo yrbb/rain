@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"database/sql"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -194,4 +195,71 @@ func convertSlice(a any) []any {
 
 func isZero(x any) bool {
 	return reflect.DeepEqual(x, reflect.Zero(reflect.TypeOf(x)).Interface())
+}
+
+var TimeKind = reflect.TypeOf(sql.NullTime{}).Kind()
+
+func convertRows(rows *sql.Rows) ([]map[string]any, error) {
+	sm := make([]map[string]any, 0)
+
+	cls, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	cts, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		dest := make([]any, len(cls))
+		ptrs := make([]any, len(cls))
+		for i := range dest {
+			ptrs[i] = &dest[i]
+		}
+
+		err = rows.Scan(ptrs...)
+		if err != nil {
+			return nil, err
+		}
+
+		m := make(map[string]any)
+		for i, v := range dest {
+			name := cls[i]
+
+			switch cts[i].ScanType().Kind() {
+			case reflect.Slice:
+				switch cts[i].DatabaseTypeName() {
+				case "DECIMAL", "DOUBLE", "FLOAT":
+					m[name] = utils.ToFloat64(v)
+				case "MEDIUMINT", "UNSIGNED MEDIUMINT", "BIGINT", "UNSIGNED BIGINT",
+					"INT", "UNSIGNED INT", "SMALLINT", "UNSIGNED SMALLINT":
+					m[name] = utils.ToInt64(v)
+				case "TEXT", "JSON", "CHAR", "VARCHAR", "TINYTEXT":
+					m[name] = string(v.([]byte))
+				// case "DATE", "DATETIME", "TIMESTAMP":
+				default:
+					m[name] = utils.ToString(v)
+				}
+
+			case reflect.Int, reflect.Int8,
+				reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+
+				m[name] = utils.ToInt64(v)
+
+			// case TimeKind:
+			// 	fmt.Println("time", colVal, reflect.TypeOf(colVal))
+			// 	rowResult[colName] = utils.ToString(colVal)
+
+			default:
+				m[name] = utils.ToString(v)
+			}
+		}
+
+		sm = append(sm, m)
+	}
+
+	return sm, nil
 }

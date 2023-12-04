@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -41,6 +42,42 @@ func TestMain(m *testing.M) {
 	logger.SetLevel("debug")
 
 	m.Run()
+}
+
+func TestQueryMap(t *testing.T) {
+	res, err := testIns.NewSession().QueryMap(
+		"select id, name, ft, sum(num) as sn from test where id<? group by id",
+		[]any{10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, v := range res {
+		fmt.Printf("%T, %T, %T, %T\n", v["id"], v["name"], v["ft"], v["sn"])
+		t.Log(v["id"], v["name"], v["ft"], v["sn"])
+	}
+}
+
+func TestQueryStruct(t *testing.T) {
+	res := []struct {
+		Id   int64   `json:"id"`
+		Name string  `json:"name"`
+		Ft   float64 `json:"ft"`
+		Sn   int64   `json:"sn"`
+	}{}
+	err := testIns.NewSession().QueryStruct(
+		"select id, name, ft, sum(num) as sn from test where id<? group by id",
+		[]any{10},
+		&res,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, v := range res {
+		t.Log(v.Id, v.Name, v.Ft, v.Sn)
+	}
 }
 
 func TestCreate(t *testing.T) {
@@ -95,8 +132,12 @@ func TestDelete(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	tm := TestModel{}
-	res, err := testIns.Where("id", 1).Get(&tm)
+	tm := TestModel{Id: 1}
+	res, err := testIns.Get(&tm)
+	t.Log(res, err, tm)
+
+	tm1 := TestModel{}
+	res, err = testIns.Where("id", 1).Get(&tm1)
 	t.Log(res, err, tm)
 
 	tm2 := TestModel{}
@@ -105,9 +146,8 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetMap(t *testing.T) {
-	nm1 := map[string]any{}
-	res, err := testIns.Where("id", 1).GetMap(&TestModel{}, nm1)
-	t.Log(res, err, nm1)
+	res, err := testIns.Where("id", 1).GetMap(&TestModel{})
+	t.Log(res, err)
 }
 
 func TestFind(t *testing.T) {
@@ -121,7 +161,6 @@ func TestFind(t *testing.T) {
 }
 
 func TestFindMap(t *testing.T) {
-	nm := []map[string]any{}
-	res, err := testIns.Where("id", []int{1, 2}, "IN").FindMap(&TestModel{}, &nm)
-	t.Log(res, err, nm)
+	res, err := testIns.Where("id", []int{1, 3}, "IN").FindMap(&TestModel{})
+	t.Log(res, err)
 }

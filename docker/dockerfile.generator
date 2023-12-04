@@ -12,8 +12,8 @@ RUN export PROTOC_ZIP=protoc-21.9-linux-x86_64.zip \
     && unzip -o $PROTOC_ZIP -d /usr/local 'include/*' \
     && rm -f $PROTOC_ZIP
 
-RUN go install -v github.com/golang/protobuf/protoc-gen-go@latest \
-    && go install -v github.com/yrbb/protoc-gen-rain@latest
+RUN go install -v github.com/golang/protobuf/protoc-gen-go@latest
+RUN go install -v github.com/yrbb/protoc-gen-rain@v0.0.1
 
 RUN git clone --branch v2.2.0 https://github.com/grpc-ecosystem/grpc-gateway.git /go/src/github.com/grpc-ecosystem/grpc-gateway
 

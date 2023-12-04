@@ -69,7 +69,7 @@ func (s *Session) makeUpdateParams(obj []any) (err error) {
 	}
 
 	if len(s.where) == 0 {
-		if err = s.makeWhereCondition(obj[0]); err != nil {
+		if err = s.makeWhereCondition(obj[0], false); err != nil {
 			return err
 		}
 	}
@@ -98,7 +98,7 @@ func (s *Session) Delete(obj ...any) (rowsAffected int64, err error) {
 		}
 
 		if len(s.where) == 0 {
-			if err = s.makeWhereCondition(obj[0]); err != nil {
+			if err = s.makeWhereCondition(obj[0], false); err != nil {
 				return 0, err
 			}
 		}
@@ -210,8 +210,15 @@ func (s *Session) Exec(sqlStr string, values ...any) (res sql.Result, err error)
 	return
 }
 
-func (s *Session) makeWhereCondition(m any) error {
-	rv := reflect.Indirect(reflect.ValueOf(m))
+func (s *Session) makeWhereCondition(m any, isValue bool) error {
+	var rv reflect.Value
+	if !isValue {
+		rv = reflect.ValueOf(m)
+	} else {
+		rv = m.(reflect.Value)
+	}
+
+	ri := reflect.Indirect(rv)
 
 	find := false
 	where := map[string]any{}
@@ -219,7 +226,7 @@ func (s *Session) makeWhereCondition(m any) error {
 	// has primary key
 	if len(s.table.PrimaryKeys) > 0 {
 		for _, i := range s.table.PrimaryKeys {
-			if val := rv.Field(i).Interface(); isZero(val) {
+			if val := ri.Field(i).Interface(); isZero(val) {
 				find = false
 			} else {
 				find = true
@@ -238,7 +245,7 @@ func (s *Session) makeWhereCondition(m any) error {
 			where = map[string]any{}
 
 			for _, uq := range uqs {
-				if val := rv.Field(uq).Interface(); isZero(val) {
+				if val := ri.Field(uq).Interface(); isZero(val) {
 					find = false
 				} else {
 					find = true
