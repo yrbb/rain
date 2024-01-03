@@ -181,6 +181,10 @@ func (c *Config) Get(name string) any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.Custom == nil {
+		return nil
+	}
+
 	if v, ok := c.Custom[name]; ok {
 		if val, ok := v.(string); ok {
 			if res, err := strconv.ParseInt(v.(string), 10, 64); err == nil {
@@ -198,6 +202,10 @@ func (c *Config) Get(name string) any {
 
 func (c *Config) Set(name string, value any) {
 	c.mu.Lock()
+	if c.Custom == nil {
+		c.Custom = map[string]any{}
+	}
+
 	c.Custom[name] = value
 	c.mu.Unlock()
 }

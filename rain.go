@@ -50,6 +50,10 @@ type Rain struct {
 }
 
 func New() (*Rain, error) {
+	if len(os.Args) < 2 {
+		return nil, fmt.Errorf("参数异常")
+	}
+
 	p := &Rain{
 		cmd:    RootCmd,
 		pid:    os.Getpid(),

@@ -49,7 +49,7 @@ func HandleRecover(c *gin.Context, err any) {
 	headers := strings.Split(string(httpRequest), "\r\n")
 
 	for idx, header := range headers {
-		if current := strings.Split(header, ":"); current[0] == "Authorization" {
+		if current := strings.Split(header, ":"); len(current) > 0 && current[0] == "Authorization" {
 			headers[idx] = current[0] + ": *"
 		}
 	}

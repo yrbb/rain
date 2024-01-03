@@ -80,5 +80,9 @@ func M() *slog.Logger {
 }
 
 func Close() {
+	if lWriter == nil {
+		return
+	}
+
 	lWriter.Close()
 }

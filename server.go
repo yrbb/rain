@@ -70,7 +70,7 @@ func serverIsReady(listen string) bool {
 	}
 
 	res, err := http.Get(fmt.Sprintf("http://%s/health", listen))
-	if err != nil {
+	if err != nil || res == nil {
 		return false
 	}
 
